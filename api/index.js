@@ -5,7 +5,7 @@ export default async function handler(req, res) {
     const host = req.headers.host;
 
     try {
-        const cleanPath = (url === '/' || url === '/api' || url === '/api/index.js') ? '/wiki/Main_Page' : url;
+        const cleanPath = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
         const targetUrl = `https://en.m.wikipedia.org${cleanPath}`;
         
         const response = await axios.get(targetUrl, {
@@ -13,30 +13,33 @@ export default async function handler(req, res) {
         });
         
         let html = response.data;
-        
-        // Ensure all links stay on your proxy
         html = html.replace(/https:\/\/en.m.wikipedia.org/g, `https://${host}`);
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <script>
+                // 1. KILL SERVICE WORKERS (This stops Wikipedia from bypassing us)
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(regs => {
+                        for(let reg of regs) reg.unregister();
+                    });
+                }
+
                 const state = {
-                    get n() { return parseInt(localStorage.getItem('w_n')) || 0 },
-                    set n(v) { localStorage.setItem('w_n', v) },
-                    get locked() { return localStorage.getItem('w_l') === 'true' },
-                    set locked(v) { localStorage.setItem('w_l', v) },
-                    get clicks() { return parseInt(localStorage.getItem('w_c')) || 0 },
-                    set clicks(v) { localStorage.setItem('w_c', v) }
+                    get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
+                    set n(v) { localStorage.setItem('m_n', v) },
+                    get locked() { return localStorage.getItem('m_l') === 'true' },
+                    set locked(v) { localStorage.setItem('m_l', v) },
+                    get clicks() { return parseInt(localStorage.getItem('m_c')) || 0 },
+                    set clicks(v) { localStorage.setItem('m_c', v) }
                 };
 
                 let lastY = window.scrollY;
 
-                // 1. INPUT SYSTEM
                 window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
-
-                    if (currY >= max - 15) { localStorage.clear(); return; }
+                    if (currY >= max - 10) { localStorage.clear(); return; }
                     if (currY <= 5 && state.n > 0 && !state.locked) { 
                         state.locked = true; 
                         return; 
@@ -47,48 +50,36 @@ export default async function handler(req, res) {
                     }
                 });
 
-                // 2. THE NUCLEAR HIJACK: Intercept the actual URL change
-                const originalAssign = window.location.assign;
-                const handleNav = (url) => {
-                    if (state.locked && url.includes('Special:Random')) {
-                        state.clicks++;
-                        if (state.clicks >= state.n) {
-                            window.location.href = "/wiki/Mahatma_Gandhi";
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
-                // Watch for any link clicks globally
-                document.addEventListener('click', (e) => {
+                // 2. THE HARD HIJACK (Intercepts everything)
+                window.onclick = function(e) {
                     const a = e.target.closest('a');
                     if (a && a.href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
-                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        
                         state.clicks++;
                         if (state.clicks >= state.n) {
-                            window.location.replace("/wiki/Mahatma_Gandhi");
+                            // FORCE RELOAD TO GANDHI
+                            window.location.replace("https://${host}/wiki/Mahatma_Gandhi");
                         } else {
-                            window.location.replace("/wiki/Special:Random");
+                            window.location.replace("https://${host}/wiki/Special:Random");
                         }
+                        return false;
                     }
-                }, true);
-
-                // Hijack Wikipedia's internal AJAX calls
-                const open = window.XMLHttpRequest.prototype.open;
-                window.XMLHttpRequest.prototype.open = function(method, url) {
-                    if (state.locked && url.includes('Special:Random') && state.clicks + 1 >= state.n) {
-                        // If Wikipedia tries to fetch a random page via AJAX, we force a hard redirect
-                        window.location.href = "/wiki/Mahatma_Gandhi";
-                    }
-                    return open.apply(this, arguments);
                 };
+
+                // 3. BACKUP HIJACK: Catch background navigations
+                window.addEventListener('unload', () => {
+                   if (state.locked && document.activeElement && document.activeElement.href.includes('Special:Random')) {
+                       // This is a last-ditch effort if the click handler was bypassed
+                   }
+                });
             </script>
         `;
         
         html = html.replace('</head>', injection + '</head>');
         res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         return res.send(html);
     } catch (e) {
         return res.status(500).send("Proxy Error");
