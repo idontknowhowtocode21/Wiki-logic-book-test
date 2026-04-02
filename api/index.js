@@ -2,7 +2,7 @@ const axios = require('axios');
 
 export default async function handler(req, res) {
     const { url } = req;
-    const host = req.headers.host; // Dynamically gets your Vercel URL
+    const host = req.headers.host;
 
     try {
         const cleanPath = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
@@ -13,11 +13,13 @@ export default async function handler(req, res) {
         });
         
         let html = response.data;
-        
-        // 1. STYLES: Pull CSS/Fonts from Wiki, but keep the Logic on Vercel
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
+            <audio id="magic-audio" loop muted playsinline>
+                <source src="https://actions.google.com/sounds/v1/science_fiction/robot_code_typing.ogg" type="audio/ogg">
+            </audio>
+
             <script>
                 const state = {
                     get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
@@ -28,32 +30,62 @@ export default async function handler(req, res) {
                     set clicks(v) { localStorage.setItem('m_c', v) }
                 };
 
-                // 1. INPUT: Tap Title
-                document.addEventListener('click', (e) => {
-                    if (state.locked) return;
-                    if (e.target.closest('#section_0, .header-container')) {
-                        state.n++;
-                        if(navigator.vibrate) navigator.vibrate(12);
-                    }
-                }, true);
+                const audio = document.getElementById('magic-audio');
+                
+                // CRITICAL: The user MUST tap the screen once to enable the volume listener
+                document.addEventListener('click', () => {
+                    audio.muted = false;
+                    audio.play().then(() => {
+                        audio.volume = 0.5; // Set to middle
+                    }).catch(e => console.log("Audio Init Fail"));
+                }, { once: true });
 
-                // 2. LOCK: Scroll Top
+                // 1. THE VOLUME LISTENER (Reinforced)
+                let lastVol = 0.5;
+                audio.addEventListener('volumechange', () => {
+                    if (state.locked) return;
+
+                    const newVol = audio.volume;
+                    if (newVol > lastVol) {
+                        state.n++;
+                        if(navigator.vibrate) navigator.vibrate(15);
+                    } else if (newVol < lastVol) {
+                        state.n = 0; // Volume Down resets the count
+                        if(navigator.vibrate) navigator.vibrate([40, 40]);
+                    }
+                    
+                    // Immediately snap back to middle to allow rapid clicks
+                    lastVol = 0.5;
+                    audio.volume = 0.5; 
+                });
+
+                // 2. LOCK & RESTART LOGIC
                 window.addEventListener('scroll', () => {
-                    if (window.scrollY <= 1 && state.n > 0 && !state.locked) {
+                    const currY = window.scrollY;
+                    const max = document.documentElement.scrollHeight - window.innerHeight;
+                    if (currY <= 1 && state.n > 0 && !state.locked) {
                         state.locked = true;
                         if(navigator.vibrate) navigator.vibrate([30, 30]);
                     }
+                    if (currY >= max - 5 && max > 100) {
+                        localStorage.clear();
+                        window.location.reload();
+                    }
                 });
 
-                // 3. THE IRON CAGE: Intercept EVERY link click on the entire site
+                // 3. THE HIJACKER
                 window.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
                     if (!link) return;
+                    const href = link.getAttribute('href') || '';
 
-                    const href = link.getAttribute('href');
-                    if (!href) return;
+                    if (href.includes('Main_Page') || link.innerText.toLowerCase().includes('home')) {
+                        e.preventDefault();
+                        localStorage.clear();
+                        window.location.href = "https://${host}/wiki/Main_Page";
+                        return;
+                    }
 
-                    // SPECIAL CASE: The Random Force
                     if (href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
@@ -66,13 +98,8 @@ export default async function handler(req, res) {
                         return;
                     }
 
-                    // GENERAL CASE: All other links (Home, Search, etc.)
-                    // If it's a Wikipedia link, rewrite it to stay on Vercel
                     if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
                         e.preventDefault();
-                        e.stopImmediatePropagation();
-                        
-                        // Extract the path (e.g., /wiki/Main_Page)
                         const path = href.replace('https://en.m.wikipedia.org', '');
                         window.location.href = "https://${host}" + path;
                     }
