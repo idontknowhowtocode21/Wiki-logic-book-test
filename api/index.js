@@ -18,11 +18,9 @@ export default async function handler(req, res) {
 
         const injection = `
             <script>
-                // 1. KILL SERVICE WORKERS (This stops Wikipedia from bypassing us)
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistrations().then(regs => {
-                        for(let reg of regs) reg.unregister();
-                    });
+                // 1. FRESH START: Reset clicks if we are back at the start of the trick
+                if (window.location.pathname === '/wiki/Main_Page' || window.location.pathname === '/') {
+                    localStorage.setItem('m_c', '0');
                 }
 
                 const state = {
@@ -35,6 +33,7 @@ export default async function handler(req, res) {
                 };
 
                 let lastY = window.scrollY;
+                let lastClickTime = 0;
 
                 window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
@@ -50,16 +49,22 @@ export default async function handler(req, res) {
                     }
                 });
 
-                // 2. THE HARD HIJACK (Intercepts everything)
                 window.onclick = function(e) {
                     const a = e.target.closest('a');
                     if (a && a.href.includes('Special:Random') && state.locked) {
+                        
+                        // DEBOUNCE: Ignore clicks happening within 1000ms (1 second)
+                        const now = Date.now();
+                        if (now - lastClickTime < 1000) return false;
+                        lastClickTime = now;
+
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         
                         state.clicks++;
+                        
+                        // LOGIC: If we hit the target, go to Gandhi
                         if (state.clicks >= state.n) {
-                            // FORCE RELOAD TO GANDHI
                             window.location.replace("https://${host}/wiki/Mahatma_Gandhi");
                         } else {
                             window.location.replace("https://${host}/wiki/Special:Random");
@@ -67,19 +72,11 @@ export default async function handler(req, res) {
                         return false;
                     }
                 };
-
-                // 3. BACKUP HIJACK: Catch background navigations
-                window.addEventListener('unload', () => {
-                   if (state.locked && document.activeElement && document.activeElement.href.includes('Special:Random')) {
-                       // This is a last-ditch effort if the click handler was bypassed
-                   }
-                });
             </script>
         `;
         
         html = html.replace('</head>', injection + '</head>');
         res.setHeader('Content-Type', 'text/html');
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         return res.send(html);
     } catch (e) {
         return res.status(500).send("Proxy Error");
