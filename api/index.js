@@ -9,7 +9,7 @@ export default async function handler(req, res) {
         const targetUrl = `https://en.m.wikipedia.org${cleanPath}`;
         
         const response = await axios.get(targetUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU OS 15_0 like Mac OS X) AppleWebKit/605.1.15' }
+            headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15' }
         });
         
         let html = response.data;
@@ -18,66 +18,63 @@ export default async function handler(req, res) {
 
         const injection = `
             <script>
-                // Reset click counter on the Main Page for a fresh trick
-                if (window.location.pathname.includes('Main_Page')) {
+                // Clear state if we are truly starting over
+                if (window.location.pathname.endsWith('Main_Page')) {
                     localStorage.setItem('m_c', '0');
                 }
 
                 const state = {
                     get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
                     set n(v) { localStorage.setItem('m_n', v) },
-                    get locked() { return localStorage.getItem('m_l') === 'true' },
-                    set locked(v) { localStorage.setItem('m_l', v) },
+                    get locked() { return localStorage.getItem('wiki_locked') === 'true' },
+                    set locked(v) { localStorage.setItem('wiki_locked', v) },
                     get clicks() { return parseInt(localStorage.getItem('m_c')) || 0 },
                     set clicks(v) { localStorage.setItem('m_c', v) }
                 };
 
-                // 1. THE PROGRAMMING: Tap the Featured Article Title
-                document.addEventListener('click', (e) => {
+                // 1. THE INPUT: Capture ALL clicks and check if they hit a heading/title
+                window.addEventListener('click', (e) => {
                     if (state.locked) return;
-                    
-                    // Wikipedia titles are usually inside #section_0 or have specific classes
-                    const isTitle = e.target.closest('#section_0') || e.target.closest('.header-container');
-                    
-                    if (isTitle) {
+
+                    // If you tap a Heading (H1, H2) or the Featured Box
+                    const isHeader = e.target.closest('h1, h2, .content, #section_0');
+                    if (isHeader) {
                         state.n++;
-                        console.log("FORCE SET TO: " + state.n);
-                        // Subtle haptic so YOU know it counted
-                        if(window.navigator.vibrate) window.navigator.vibrate(10);
+                        console.log("N updated: " + state.n);
+                        if(window.navigator.vibrate) window.navigator.vibrate(15);
                     }
-                });
+                }, true);
 
                 // 2. THE LOCK: Scroll to Top
                 window.addEventListener('scroll', () => {
                     if (window.scrollY <= 2 && state.n > 0 && !state.locked) {
                         state.locked = true;
-                        if(window.navigator.vibrate) window.navigator.vibrate([20, 20]);
+                        if(window.navigator.vibrate) window.navigator.vibrate([30, 30]);
                     }
-                    // THE RESET: Scroll to Bottom
-                    const max = document.documentElement.scrollHeight - window.innerHeight;
-                    if (window.scrollY >= max - 5) {
+                    // RESET: Scroll to bottom
+                    if (window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 5) {
                         localStorage.clear();
-                        location.reload();
+                        window.location.reload();
                     }
                 });
 
-                // 3. THE HIJACK
-                window.onclick = function(e) {
+                // 3. THE HIJACK: High-priority capture listener
+                window.addEventListener('click', (e) => {
                     const a = e.target.closest('a');
                     if (a && a.href.includes('Special:Random') && state.locked) {
+                        // Kill the original Wikipedia event
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         
                         state.clicks++;
                         
                         if (state.clicks >= state.n) {
-                            window.location.replace("https://${host}/wiki/Mahatma_Gandhi");
+                            window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
                         } else {
-                            window.location.replace("https://${host}/wiki/Special:Random");
+                            window.location.href = "https://${host}/wiki/Special:Random";
                         }
-                        return false;
                     }
-                };
+                }, true); // The 'true' here is the secret to winning the priority battle
             </script>
         `;
         
