@@ -2,7 +2,6 @@ const axios = require('axios');
 
 export default async function handler(req, res) {
     const { url } = req;
-
     try {
         const path = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
         const targetUrl = `https://en.m.wikipedia.org${path}`;
@@ -16,42 +15,39 @@ export default async function handler(req, res) {
 
         const injection = `
             <script>
-                let lockedNumber = 1;
-                let scrollTimer = null;
+                let currentForceNum = 1;
+
+                // Function to find and replace the number in the UI without breaking the page
+                function updateUiNumber(newNum) {
+                    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+                    let node;
+                    while(node = walker.nextNode()) {
+                        if (node.nodeValue.includes("6,1") || node.nodeValue.includes("6," + currentForceNum)) {
+                            node.nodeValue = node.nodeValue.replace(/6,[1-5]/g, "6," + newNum);
+                            currentForceNum = newNum;
+                        }
+                    }
+                }
 
                 window.addEventListener('scroll', () => {
-                    clearTimeout(scrollTimer);
-                    
-                    // Calculate scroll percentage (0 to 100)
-                    const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
-                    
-                    // Map percentage to a number 1-5
-                    // 0-20%=1, 21-40%=2, 41-60%=3, 61-80%=4, 81-100%=5
-                    lockedNumber = Math.ceil(scrollPercent / 20) || 1;
+                    // Calculate 1-5 based on scroll position
+                    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+                    const scrollPercent = (window.scrollY / maxScroll) * 100;
+                    const newNum = Math.ceil(scrollPercent / 20) || 1;
 
-                    // 'Lock' the number after 1 second of no scrolling
-                    scrollTimer = setTimeout(() => {
-                        console.log("Number Locked at: " + lockedNumber);
-                        // Optional: Tiny vibration to confirm the lock for the magician
-                        if(window.navigator.vibrate) window.navigator.vibrate(10);
-                        
-                        // Update the UI Number visually
-                        const bodyHtml = document.body.innerHTML;
-                        if (bodyHtml.includes("6,1")) {
-                             document.body.innerHTML = bodyHtml.replace(/6,1/g, "6," + lockedNumber);
-                        }
-                    }, 1000);
+                    if (newNum !== currentForceNum && newNum <= 5) {
+                        updateUiNumber(newNum);
+                    }
                 });
 
-                // Hijack the Randomizer
+                // Hijack the Random button to always load Gandhi
                 setInterval(() => {
-                    const links = document.querySelectorAll('a');
-                    links.forEach(link => {
+                    document.querySelectorAll('a').forEach(link => {
                         if (link.href.includes('Special:Random')) {
                             link.href = "/wiki/Mahatma_Gandhi";
                         }
                     });
-                }, 2000);
+                }, 1000);
             </script>
         `;
         
