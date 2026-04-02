@@ -18,8 +18,8 @@ export default async function handler(req, res) {
 
         const injection = `
             <script>
-                // 1. FRESH START: Reset clicks if we are back at the start of the trick
-                if (window.location.pathname === '/wiki/Main_Page' || window.location.pathname === '/') {
+                // Reset click counter on the Main Page for a fresh trick
+                if (window.location.pathname.includes('Main_Page')) {
                     localStorage.setItem('m_c', '0');
                 }
 
@@ -32,38 +32,44 @@ export default async function handler(req, res) {
                     set clicks(v) { localStorage.setItem('m_c', v) }
                 };
 
-                let lastY = window.scrollY;
-                let lastClickTime = 0;
-
-                window.addEventListener('scroll', () => {
-                    const currY = window.scrollY;
-                    const max = document.documentElement.scrollHeight - window.innerHeight;
-                    if (currY >= max - 10) { localStorage.clear(); return; }
-                    if (currY <= 5 && state.n > 0 && !state.locked) { 
-                        state.locked = true; 
-                        return; 
-                    }
-                    if (!state.locked && currY > lastY + 80) {
+                // 1. THE PROGRAMMING: Tap the Featured Article Title
+                document.addEventListener('click', (e) => {
+                    if (state.locked) return;
+                    
+                    // Wikipedia titles are usually inside #section_0 or have specific classes
+                    const isTitle = e.target.closest('#section_0') || e.target.closest('.header-container');
+                    
+                    if (isTitle) {
                         state.n++;
-                        lastY = currY;
+                        console.log("FORCE SET TO: " + state.n);
+                        // Subtle haptic so YOU know it counted
+                        if(window.navigator.vibrate) window.navigator.vibrate(10);
                     }
                 });
 
+                // 2. THE LOCK: Scroll to Top
+                window.addEventListener('scroll', () => {
+                    if (window.scrollY <= 2 && state.n > 0 && !state.locked) {
+                        state.locked = true;
+                        if(window.navigator.vibrate) window.navigator.vibrate([20, 20]);
+                    }
+                    // THE RESET: Scroll to Bottom
+                    const max = document.documentElement.scrollHeight - window.innerHeight;
+                    if (window.scrollY >= max - 5) {
+                        localStorage.clear();
+                        location.reload();
+                    }
+                });
+
+                // 3. THE HIJACK
                 window.onclick = function(e) {
                     const a = e.target.closest('a');
                     if (a && a.href.includes('Special:Random') && state.locked) {
-                        
-                        // DEBOUNCE: Ignore clicks happening within 1000ms (1 second)
-                        const now = Date.now();
-                        if (now - lastClickTime < 1000) return false;
-                        lastClickTime = now;
-
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         
                         state.clicks++;
                         
-                        // LOGIC: If we hit the target, go to Gandhi
                         if (state.clicks >= state.n) {
                             window.location.replace("https://${host}/wiki/Mahatma_Gandhi");
                         } else {
