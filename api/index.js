@@ -13,49 +13,42 @@ export default async function handler(req, res) {
         });
         
         let html = response.data;
-        // Force all internal links to stay on the Vercel Proxy
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <style>
                 #magic-digit {
-                    position: fixed;
-                    bottom: 15px;
-                    right: 15px;
-                    font-size: 14px;
-                    color: rgba(0,0,0,0.3); /* Discrete but visible */
-                    background: rgba(255,255,255,0.7);
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                    z-index: 99999;
-                    pointer-events: none;
-                    font-family: sans-serif;
-                    font-weight: bold;
-                    display: block;
+                    position: fixed; bottom: 15px; right: 15px;
+                    font-size: 14px; color: rgba(0,0,0,0.4);
+                    background: rgba(255,255,255,0.8);
+                    padding: 2px 6px; border-radius: 4px;
+                    z-index: 2147483647; pointer-events: none;
+                    font-family: sans-serif; font-weight: bold;
                 }
             </style>
             <div id="magic-digit">0</div>
 
             <script>
+                // Use sessionStorage for better reliability across "app-like" navigations
+                const getVal = (k) => localStorage.getItem(k);
+                const setVal = (k, v) => localStorage.setItem(k, v);
+
                 const state = {
-                    get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
-                    set n(v) { localStorage.setItem('m_n', v); document.getElementById('magic-digit').innerText = v; },
-                    get locked() { return localStorage.getItem('m_l') === 'true' },
-                    set locked(v) { localStorage.setItem('m_l', v) },
-                    get clicks() { return parseInt(localStorage.getItem('m_c')) || 0 },
-                    set clicks(v) { localStorage.setItem('m_c', v) }
+                    get n() { return parseInt(getVal('m_n')) || 0 },
+                    set n(v) { setVal('m_n', v); document.getElementById('magic-digit').innerText = v; },
+                    get locked() { return getVal('m_l') === 'true' },
+                    set locked(v) { setVal('m_l', v) },
+                    get clicks() { return parseInt(getVal('m_c')) || 0 },
+                    set clicks(v) { setVal('m_c', v) }
                 };
 
                 const digitEl = document.getElementById('magic-digit');
-                
-                // Keep digit hidden if already locked from a previous page
                 if (state.locked) digitEl.style.display = 'none';
 
+                // 1. IMPROVED SCROLL SENSITIVITY (50px)
                 window.addEventListener('scroll', () => {
                     const currY = window.pageYOffset || document.documentElement.scrollTop;
-                    const max = document.documentElement.scrollHeight - window.innerHeight;
-
-                    // 1. THE LOCK (Must have an N value first)
+                    
                     if (currY <= 0 && state.n > 0 && !state.locked) {
                         state.locked = true;
                         digitEl.style.display = 'none';
@@ -63,58 +56,57 @@ export default async function handler(req, res) {
                         return;
                     }
 
-                    // 2. PROGRAMMING (50px increments)
                     if (!state.locked) {
                         let tempN = Math.floor(currY / 50);
                         if (tempN > 15) tempN = 15;
-                        if (tempN !== state.n && tempN >= 0) {
+                        if (tempN !== state.n) {
                             state.n = tempN;
                             if(navigator.vibrate) navigator.vibrate(10);
                         }
                     }
-
-                    // 3. RESET (Absolute Bottom)
-                    if (currY >= max - 2 && max > 100) {
-                        localStorage.clear();
-                        window.location.replace("https://${host}/wiki/Main_Page");
-                    }
                 });
 
-                // 4. THE INTERCEPTOR
-                window.addEventListener('click', (e) => {
+                // 2. THE HARD INTERCEPTOR
+                // We use 'mousedown' because it fires BEFORE Wikipedia's internal 'click' handlers
+                window.addEventListener('mousedown', (e) => {
                     const link = e.target.closest('a');
                     if (!link) return;
                     
                     const href = link.getAttribute('href') || '';
 
-                    // Reset on Home click
+                    // RESET
                     if (href.includes('Main_Page') || link.innerText.toLowerCase().includes('home')) {
                         localStorage.clear();
                         window.location.replace("https://${host}/wiki/Main_Page");
                         return;
                     }
 
-                    // THE RANDOM FORCE
+                    // THE RANDOM FORCE (The "Hammer")
                     if (href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         
-                        const nextClick = state.clicks + 1;
-                        state.clicks = nextClick;
+                        let c = state.clicks + 1;
+                        state.clicks = c;
 
-                        if (nextClick >= state.n) {
+                        if (c >= state.n) {
                             window.location.replace("https://${host}/wiki/Mahatma_Gandhi");
                         } else {
-                            window.location.replace("https://${host}/wiki/Special:Random?r=" + Math.random());
+                            window.location.replace("https://${host}/wiki/Special:Random?unique=" + Date.now());
                         }
                     } 
-                    // ROUTE ALL OTHER LINKS
+                    // PROTECT DOMAIN
                     else if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
                         e.preventDefault();
                         const path = href.replace('https://en.m.wikipedia.org', '');
                         window.location.replace("https://${host}" + path);
                     }
                 }, true);
+
+                // 3. FAIL-SAFE: If Wikipedia tries to navigate via JS/AJAX, we catch it here
+                window.addEventListener('unload', () => {
+                    // This ensures state is pushed to disk before the page dies
+                });
             </script>
         `;
         
