@@ -2,6 +2,8 @@ const axios = require('axios');
 
 export default async function handler(req, res) {
     const { url } = req;
+    const host = req.headers.host; // This gets your 'wiki-logic-book-test.vercel.app'
+
     try {
         const path = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
         const targetUrl = `https://en.m.wikipedia.org${path}`;
@@ -11,60 +13,62 @@ export default async function handler(req, res) {
         });
         
         let html = response.data;
+        
+        // 1. DOMAIN HIJACK: Replace all Wikipedia links with YOUR Vercel links
+        // This keeps the script running even if they click 100 links
+        html = html.replace(/https:\/\/en.m.wikipedia.org/g, `https://${host}`);
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <script>
-                // persistent state across page loads
-                let targetN = parseInt(sessionStorage.getItem('targetN')) || 0;
-                let isLocked = sessionStorage.getItem('isLocked') === 'true';
-                let clickCount = parseInt(sessionStorage.getItem('clickCount')) || 0;
+                // We use localStorage instead of sessionStorage for better persistence
+                let n = parseInt(localStorage.getItem('targetN')) || 0;
+                let locked = localStorage.getItem('isLocked') === 'true';
+                let clicks = parseInt(localStorage.getItem('clickCount')) || 0;
                 let lastY = window.scrollY;
 
                 window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
 
-                    // RESET: Hit bottom
-                    if (currY >= max - 10) {
-                        targetN = 0;
-                        isLocked = false;
-                        clickCount = 0;
-                        sessionStorage.clear();
+                    if (currY >= max - 20) {
+                        localStorage.clear();
+                        n = 0; locked = false; clicks = 0;
+                        console.log("RESET");
                         return;
                     }
 
-                    // LOCK: Hit top
-                    if (currY <= 5 && targetN > 0) {
-                        isLocked = true;
-                        sessionStorage.setItem('isLocked', 'true');
+                    if (currY <= 5 && n > 0 && !locked) {
+                        locked = true;
+                        localStorage.setItem('isLocked', 'true');
+                        console.log("LOCKED AT: " + n);
                         return;
                     }
 
-                    // COUNT FLICKS: Scroll down
-                    if (!isLocked && currY > lastY + 80) {
-                        targetN++;
+                    if (!locked && currY > lastY + 70) {
+                        n++;
                         lastY = currY;
-                        sessionStorage.setItem('targetN', targetN.toString());
+                        localStorage.setItem('targetN', n);
+                        console.log("TARGET: " + n);
                     }
                 });
 
-                // INTERCEPT CLICKS
+                // AGGRESSIVE CLICK INTERCEPT
                 document.addEventListener('click', (e) => {
-                    const link = e.target.closest('a');
-                    if (link && link.href.includes('Special:Random') && isLocked) {
+                    const a = e.target.closest('a');
+                    if (a && a.href.includes('Special:Random') && localStorage.getItem('isLocked') === 'true') {
                         e.preventDefault();
+                        e.stopPropagation();
                         
-                        // Increment how many times they have clicked 'Random'
-                        clickCount++;
-                        sessionStorage.setItem('clickCount', clickCount.toString());
-
-                        if (clickCount >= targetN) {
-                            // The Force: Gandhi on the Nth try
-                            window.location.href = "/wiki/Mahatma_Gandhi";
+                        clicks++;
+                        localStorage.setItem('clickCount', clicks);
+                        
+                        let targetN = parseInt(localStorage.getItem('targetN'));
+                        
+                        if (clicks >= targetN) {
+                            window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
                         } else {
-                            // Normal Behavior: Go to a real random page for tries 1 to N-1
-                            window.location.href = "https://en.m.wikipedia.org/wiki/Special:Random";
+                            window.location.href = "https://${host}/wiki/Special:Random";
                         }
                     }
                 }, true);
