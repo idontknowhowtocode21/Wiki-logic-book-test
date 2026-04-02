@@ -2,76 +2,87 @@ const axios = require('axios');
 
 export default async function handler(req, res) {
     const { url } = req;
-    const host = req.headers.host; // This gets your 'wiki-logic-book-test.vercel.app'
+    const host = req.headers.host;
 
     try {
         const path = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
         const targetUrl = `https://en.m.wikipedia.org${path}`;
         
         const response = await axios.get(targetUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15' }
+            headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU OS 15_0 like Mac OS X) AppleWebKit/605.1.15' }
         });
         
         let html = response.data;
         
-        // 1. DOMAIN HIJACK: Replace all Wikipedia links with YOUR Vercel links
-        // This keeps the script running even if they click 100 links
+        // Rewrite all Wikipedia links to stay on your Vercel proxy
         html = html.replace(/https:\/\/en.m.wikipedia.org/g, `https://${host}`);
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <script>
-                // We use localStorage instead of sessionStorage for better persistence
-                let n = parseInt(localStorage.getItem('targetN')) || 0;
-                let locked = localStorage.getItem('isLocked') === 'true';
-                let clicks = parseInt(localStorage.getItem('clickCount')) || 0;
+                // Use localStorage so the state survives page navigations
+                const state = {
+                    get n() { return parseInt(localStorage.getItem('wiki_n')) || 0 },
+                    set n(val) { localStorage.setItem('wiki_n', val) },
+                    get locked() { return localStorage.getItem('wiki_locked') === 'true' },
+                    set locked(val) { localStorage.setItem('wiki_locked', val) },
+                    get clicks() { return parseInt(localStorage.getItem('wiki_clicks')) || 0 },
+                    set clicks(val) { localStorage.setItem('wiki_clicks', val) }
+                };
+
                 let lastY = window.scrollY;
 
+                // 1. THE SENSOR: Tracks flicks, locks at top, resets at bottom
                 window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
 
                     if (currY >= max - 20) {
                         localStorage.clear();
-                        n = 0; locked = false; clicks = 0;
-                        console.log("RESET");
+                        console.log("CLEARED");
                         return;
                     }
 
-                    if (currY <= 5 && n > 0 && !locked) {
-                        locked = true;
-                        localStorage.setItem('isLocked', 'true');
-                        console.log("LOCKED AT: " + n);
+                    if (currY <= 5 && state.n > 0 && !state.locked) {
+                        state.locked = true;
+                        if(window.navigator.vibrate) window.navigator.vibrate(20);
                         return;
                     }
 
-                    if (!locked && currY > lastY + 70) {
-                        n++;
+                    if (!state.locked && currY > lastY + 80) {
+                        state.n++;
                         lastY = currY;
-                        localStorage.setItem('targetN', n);
-                        console.log("TARGET: " + n);
+                        console.log("N is now: " + state.n);
                     }
                 });
 
-                // AGGRESSIVE CLICK INTERCEPT
-                document.addEventListener('click', (e) => {
-                    const a = e.target.closest('a');
-                    if (a && a.href.includes('Special:Random') && localStorage.getItem('isLocked') === 'true') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        clicks++;
-                        localStorage.setItem('clickCount', clicks);
-                        
-                        let targetN = parseInt(localStorage.getItem('targetN'));
-                        
-                        if (clicks >= targetN) {
-                            window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
-                        } else {
-                            window.location.href = "https://${host}/wiki/Special:Random";
-                        }
-                    }
-                }, true);
+                // 2. THE HIJACKER: Uses a MutationObserver to beat Wikipedia's scripts
+                const observer = new MutationObserver(() => {
+                    if (!state.locked) return;
+
+                    const randomLinks = document.querySelectorAll('a[href*="Special:Random"]');
+                    randomLinks.forEach(link => {
+                        // Kill Wikipedia's internal listeners
+                        const newLink = link.cloneNode(true);
+                        link.parentNode.replaceChild(newLink, link);
+
+                        newLink.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            state.clicks++;
+                            console.log("Click count: " + state.clicks);
+
+                            if (state.clicks >= state.n) {
+                                window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
+                            } else {
+                                window.location.href = "https://${host}/wiki/Special:Random";
+                            }
+                        }, true);
+                    });
+                });
+
+                observer.observe(document.body, { childList: true, subtree: true });
             </script>
         `;
         
