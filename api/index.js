@@ -13,27 +13,30 @@ export default async function handler(req, res) {
         });
         
         let html = response.data;
+        // Force all internal links to stay on the Vercel Proxy
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <style>
                 #magic-digit {
                     position: fixed;
-                    bottom: 10px;
-                    right: 10px;
-                    font-size: 11px;
-                    color: #bbb;
-                    z-index: 10000;
+                    bottom: 15px;
+                    right: 15px;
+                    font-size: 14px;
+                    color: rgba(0,0,0,0.3); /* Discrete but visible */
+                    background: rgba(255,255,255,0.7);
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    z-index: 99999;
                     pointer-events: none;
                     font-family: sans-serif;
-                    opacity: 0.4;
                     font-weight: bold;
+                    display: block;
                 }
             </style>
             <div id="magic-digit">0</div>
 
             <script>
-                // State management with immediate DOM feedback
                 const state = {
                     get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
                     set n(v) { localStorage.setItem('m_n', v); document.getElementById('magic-digit').innerText = v; },
@@ -44,13 +47,15 @@ export default async function handler(req, res) {
                 };
 
                 const digitEl = document.getElementById('magic-digit');
+                
+                // Keep digit hidden if already locked from a previous page
                 if (state.locked) digitEl.style.display = 'none';
 
-                // 1. SCROLL PROGRAMMING (50px increments)
                 window.addEventListener('scroll', () => {
-                    const currY = window.scrollY;
+                    const currY = window.pageYOffset || document.documentElement.scrollTop;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
 
+                    // 1. THE LOCK (Must have an N value first)
                     if (currY <= 0 && state.n > 0 && !state.locked) {
                         state.locked = true;
                         digitEl.style.display = 'none';
@@ -58,55 +63,56 @@ export default async function handler(req, res) {
                         return;
                     }
 
+                    // 2. PROGRAMMING (50px increments)
                     if (!state.locked) {
                         let tempN = Math.floor(currY / 50);
-                        if (tempN > 9) tempN = 9;
+                        if (tempN > 15) tempN = 15;
                         if (tempN !== state.n && tempN >= 0) {
                             state.n = tempN;
                             if(navigator.vibrate) navigator.vibrate(10);
                         }
                     }
 
-                    if (currY >= max - 5 && max > 100) {
+                    // 3. RESET (Absolute Bottom)
+                    if (currY >= max - 2 && max > 100) {
                         localStorage.clear();
                         window.location.replace("https://${host}/wiki/Main_Page");
                     }
                 });
 
-                // 2. THE FORCE INTERCEPTOR (High Priority)
+                // 4. THE INTERCEPTOR
                 window.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
                     if (!link) return;
                     
                     const href = link.getAttribute('href') || '';
 
-                    // Reset on Home
+                    // Reset on Home click
                     if (href.includes('Main_Page') || link.innerText.toLowerCase().includes('home')) {
                         localStorage.clear();
-                        return; // Let normal navigation happen
+                        window.location.replace("https://${host}/wiki/Main_Page");
+                        return;
                     }
 
-                    // RANDOM BUTTON HIJACK
+                    // THE RANDOM FORCE
                     if (href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         
-                        let currentClicks = state.clicks + 1;
-                        state.clicks = currentClicks;
+                        const nextClick = state.clicks + 1;
+                        state.clicks = nextClick;
 
-                        if (currentClicks >= state.n) {
-                            // FORCE GANDHI
-                            window.location.assign("https://${host}/wiki/Mahatma_Gandhi");
+                        if (nextClick >= state.n) {
+                            window.location.replace("https://${host}/wiki/Mahatma_Gandhi");
                         } else {
-                            // GO TO REAL RANDOM (Bust cache to ensure it feels real)
-                            window.location.assign("https://${host}/wiki/Special:Random?rd=" + Math.random());
+                            window.location.replace("https://${host}/wiki/Special:Random?r=" + Math.random());
                         }
                     } 
-                    // ROUTE ALL OTHER LINKS THROUGH VERCEL
+                    // ROUTE ALL OTHER LINKS
                     else if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
                         e.preventDefault();
                         const path = href.replace('https://en.m.wikipedia.org', '');
-                        window.location.assign("https://${host}" + path);
+                        window.location.replace("https://${host}" + path);
                     }
                 }, true);
             </script>
