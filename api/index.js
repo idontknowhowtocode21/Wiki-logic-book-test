@@ -14,62 +14,58 @@ export default async function handler(req, res) {
         
         let html = response.data;
         
-        // 1. Keep all assets/links pointing to the real Wikipedia so CSS/Icons are perfect
+        // 1. PIXEL PERFECT: Pull all CSS, Fonts, and Icons directly from Wikipedia
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <script>
-                // State stored in session so it survives page navigation
-                let n = parseInt(sessionStorage.getItem('m_n')) || 0;
-                let clicks = parseInt(sessionStorage.getItem('m_c')) || 0;
-                let locked = sessionStorage.getItem('m_l') === 'true';
+                // We use localStorage so the count follows the spectator through random pages
+                const state = {
+                    get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
+                    set n(v) { localStorage.setItem('m_n', v) },
+                    get locked() { return localStorage.getItem('m_l') === 'true' },
+                    set locked(v) { localStorage.setItem('m_l', v) },
+                    get clicks() { return parseInt(localStorage.getItem('m_c')) || 0 },
+                    set clicks(v) { localStorage.setItem('m_c', v) }
+                };
 
-                // 1. PROGRAMMING: Tap the Featured Article title area
-                // We use the real Wikipedia ID for the header
+                // 1. PROGRAMMING: Tap the Featured Article title
                 document.addEventListener('click', (e) => {
-                    if (locked) return;
+                    if (state.locked) return;
                     if (e.target.closest('#section_0, .header-container')) {
-                        n++;
-                        sessionStorage.setItem('m_n', n);
-                        if(navigator.vibrate) navigator.vibrate(10);
+                        state.n++;
+                        if(navigator.vibrate) navigator.vibrate(12);
                     }
                 }, true);
 
                 // 2. LOCK: Scroll to top
                 window.addEventListener('scroll', () => {
-                    if (window.scrollY <= 1 && n > 0 && !locked) {
-                        locked = true;
-                        sessionStorage.setItem('m_l', 'true');
+                    if (window.scrollY <= 1 && state.n > 0 && !state.locked) {
+                        state.locked = true;
                         if(navigator.vibrate) navigator.vibrate([30, 30]);
                     }
                 });
 
-                // 3. THE HIJACK: The "Real" Pixel-Perfect Menu
-                // We wait for the real menu to exist and then swap the Random link
-                setInterval(() => {
-                    if (!locked) return;
+                // 3. THE INTERCEPTOR: Capture EVERY click on the page
+                window.addEventListener('click', (e) => {
+                    const link = e.target.closest('a');
                     
-                    // Search for the actual Wikipedia "Random" link in their real sidebar
-                    const randomLinks = document.querySelectorAll('a[href*="Special:Random"]');
-                    randomLinks.forEach(link => {
-                        if (link.dataset.magic) return;
-                        link.dataset.magic = "true";
-
-                        link.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                            
-                            clicks++;
-                            sessionStorage.setItem('m_c', clicks);
-
-                            if (clicks >= n) {
-                                window.location.href = "https://en.m.wikipedia.org/wiki/Mahatma_Gandhi";
-                            } else {
-                                window.location.href = "https://en.m.wikipedia.org/wiki/Special:Random";
-                            }
-                        }, true);
-                    });
-                }, 500);
+                    // If they click 'Random' and we are locked...
+                    if (link && link.href.includes('Special:Random') && state.locked) {
+                        // STOP Wikipedia from taking over
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        
+                        state.clicks++;
+                        
+                        // Force redirect through YOUR Vercel proxy
+                        if (state.clicks >= state.n) {
+                            window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
+                        } else {
+                            window.location.href = "https://${host}/wiki/Special:Random?t=" + Date.now();
+                        }
+                    }
+                }, true); // 'true' means we catch the click BEFORE Wikipedia's scripts do
             </script>
         `;
         
