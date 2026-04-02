@@ -33,6 +33,7 @@ export default async function handler(req, res) {
             <div id="magic-digit">0</div>
 
             <script>
+                // State management with immediate DOM feedback
                 const state = {
                     get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
                     set n(v) { localStorage.setItem('m_n', v); document.getElementById('magic-digit').innerText = v; },
@@ -45,70 +46,67 @@ export default async function handler(req, res) {
                 const digitEl = document.getElementById('magic-digit');
                 if (state.locked) digitEl.style.display = 'none';
 
-                // 1. IMPROVED SCROLL LOGIC
+                // 1. SCROLL PROGRAMMING (50px increments)
                 window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
 
-                    // LOCKING MECHANISM: Hit the absolute top
                     if (currY <= 0 && state.n > 0 && !state.locked) {
                         state.locked = true;
                         digitEl.style.display = 'none';
                         if(navigator.vibrate) navigator.vibrate([40, 40]);
-                        console.log("LOCKED AT: " + state.n);
                         return;
                     }
 
-                    // PROGRAMMING: Only if NOT locked
                     if (!state.locked) {
-                        // 50px sensitivity per number
                         let tempN = Math.floor(currY / 50);
                         if (tempN > 9) tempN = 9;
-                        
                         if (tempN !== state.n && tempN >= 0) {
                             state.n = tempN;
                             if(navigator.vibrate) navigator.vibrate(10);
                         }
                     }
 
-                    // RESET: Hit the bottom
                     if (currY >= max - 5 && max > 100) {
                         localStorage.clear();
-                        window.location.reload();
+                        window.location.replace("https://${host}/wiki/Main_Page");
                     }
                 });
 
-                // 2. THE INTERCEPTOR
+                // 2. THE FORCE INTERCEPTOR (High Priority)
                 window.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
                     if (!link) return;
+                    
                     const href = link.getAttribute('href') || '';
 
-                    // RESET ON HOME
+                    // Reset on Home
                     if (href.includes('Main_Page') || link.innerText.toLowerCase().includes('home')) {
-                        e.preventDefault();
                         localStorage.clear();
-                        window.location.href = "https://${host}/wiki/Main_Page";
-                        return;
+                        return; // Let normal navigation happen
                     }
 
-                    // THE FORCE
+                    // RANDOM BUTTON HIJACK
                     if (href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         
-                        state.clicks++;
-                        console.log("Try number: " + state.clicks);
-                        
-                        if (state.clicks >= state.n) {
-                            window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
+                        let currentClicks = state.clicks + 1;
+                        state.clicks = currentClicks;
+
+                        if (currentClicks >= state.n) {
+                            // FORCE GANDHI
+                            window.location.assign("https://${host}/wiki/Mahatma_Gandhi");
                         } else {
-                            window.location.href = "https://${host}/wiki/Special:Random?cache=" + Date.now();
+                            // GO TO REAL RANDOM (Bust cache to ensure it feels real)
+                            window.location.assign("https://${host}/wiki/Special:Random?rd=" + Math.random());
                         }
-                    } else if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
+                    } 
+                    // ROUTE ALL OTHER LINKS THROUGH VERCEL
+                    else if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
                         e.preventDefault();
                         const path = href.replace('https://en.m.wikipedia.org', '');
-                        window.location.href = "https://${host}" + path;
+                        window.location.assign("https://${host}" + path);
                     }
                 }, true);
             </script>
