@@ -15,39 +15,47 @@ export default async function handler(req, res) {
 
         const injection = `
             <script>
-                let currentForceNum = 1;
-
-                // Function to find and replace the number in the UI without breaking the page
-                function updateUiNumber(newNum) {
-                    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-                    let node;
-                    while(node = walker.nextNode()) {
-                        if (node.nodeValue.includes("6,1") || node.nodeValue.includes("6," + currentForceNum)) {
-                            node.nodeValue = node.nodeValue.replace(/6,[1-5]/g, "6," + newNum);
-                            currentForceNum = newNum;
-                        }
-                    }
-                }
+                let scrollCount = 0;
+                let lastScrollY = 0;
+                let isLocked = false;
+                const scrollThreshold = 100; // Pixels required to count as 'one scroll'
 
                 window.addEventListener('scroll', () => {
-                    // Calculate 1-5 based on scroll position
+                    const currY = window.scrollY;
                     const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-                    const scrollPercent = (window.scrollY / maxScroll) * 100;
-                    const newNum = Math.ceil(scrollPercent / 20) || 1;
 
-                    if (newNum !== currentForceNum && newNum <= 5) {
-                        updateUiNumber(newNum);
+                    // 1. RESET: Scroll to the very bottom
+                    if (currY >= maxScroll - 5) {
+                        scrollCount = 0;
+                        isLocked = false;
+                        return;
+                    }
+
+                    // 2. LOCK: Scroll to the very top
+                    if (currY <= 2 && scrollCount > 0) {
+                        isLocked = true;
+                        return;
+                    }
+
+                    // 3. COUNT: Increment on down-scroll only if not locked
+                    if (!isLocked && currY > lastScrollY + scrollThreshold) {
+                        scrollCount++;
+                        lastScrollY = currY;
+                        // Max force number of 5 as per your previous rules
+                        if (scrollCount > 5) scrollCount = 5; 
                     }
                 });
 
-                // Hijack the Random button to always load Gandhi
-                setInterval(() => {
-                    document.querySelectorAll('a').forEach(link => {
-                        if (link.href.includes('Special:Random')) {
-                            link.href = "/wiki/Mahatma_Gandhi";
-                        }
-                    });
-                }, 1000);
+                // HIJACK THE RANDOMIZER
+                document.addEventListener('click', (e) => {
+                    const link = e.target.closest('a');
+                    // We only trigger if the count matches and we are locked
+                    if (link && link.href.includes('Special:Random') && isLocked) {
+                        e.preventDefault();
+                        // You can change this URL to your desired force page
+                        window.location.href = "/wiki/Mahatma_Gandhi";
+                    }
+                }, true);
             </script>
         `;
         
