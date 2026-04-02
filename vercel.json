@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/status", "destination": "/api/index.js" },
+    { "source": "/api/arm", "destination": "/api/index.js" },
+    { "source": "/(.*)", "destination": "/api/index.js" }
+  ]
+}
