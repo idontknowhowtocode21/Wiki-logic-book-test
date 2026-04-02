@@ -15,45 +15,57 @@ export default async function handler(req, res) {
 
         const injection = `
             <script>
-                let scrollCount = 0;
-                let lastScrollY = 0;
-                let isLocked = false;
-                const scrollThreshold = 100; // Pixels required to count as 'one scroll'
+                // persistent state across page loads
+                let targetN = parseInt(sessionStorage.getItem('targetN')) || 0;
+                let isLocked = sessionStorage.getItem('isLocked') === 'true';
+                let clickCount = parseInt(sessionStorage.getItem('clickCount')) || 0;
+                let lastY = window.scrollY;
 
                 window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
-                    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+                    const max = document.documentElement.scrollHeight - window.innerHeight;
 
-                    // 1. RESET: Scroll to the very bottom
-                    if (currY >= maxScroll - 5) {
-                        scrollCount = 0;
+                    // RESET: Hit bottom
+                    if (currY >= max - 10) {
+                        targetN = 0;
                         isLocked = false;
+                        clickCount = 0;
+                        sessionStorage.clear();
                         return;
                     }
 
-                    // 2. LOCK: Scroll to the very top
-                    if (currY <= 2 && scrollCount > 0) {
+                    // LOCK: Hit top
+                    if (currY <= 5 && targetN > 0) {
                         isLocked = true;
+                        sessionStorage.setItem('isLocked', 'true');
                         return;
                     }
 
-                    // 3. COUNT: Increment on down-scroll only if not locked
-                    if (!isLocked && currY > lastScrollY + scrollThreshold) {
-                        scrollCount++;
-                        lastScrollY = currY;
-                        // Max force number of 5 as per your previous rules
-                        if (scrollCount > 5) scrollCount = 5; 
+                    // COUNT FLICKS: Scroll down
+                    if (!isLocked && currY > lastY + 80) {
+                        targetN++;
+                        lastY = currY;
+                        sessionStorage.setItem('targetN', targetN.toString());
                     }
                 });
 
-                // HIJACK THE RANDOMIZER
+                // INTERCEPT CLICKS
                 document.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
-                    // We only trigger if the count matches and we are locked
                     if (link && link.href.includes('Special:Random') && isLocked) {
                         e.preventDefault();
-                        // You can change this URL to your desired force page
-                        window.location.href = "/wiki/Mahatma_Gandhi";
+                        
+                        // Increment how many times they have clicked 'Random'
+                        clickCount++;
+                        sessionStorage.setItem('clickCount', clickCount.toString());
+
+                        if (clickCount >= targetN) {
+                            // The Force: Gandhi on the Nth try
+                            window.location.href = "/wiki/Mahatma_Gandhi";
+                        } else {
+                            // Normal Behavior: Go to a real random page for tries 1 to N-1
+                            window.location.href = "https://en.m.wikipedia.org/wiki/Special:Random";
+                        }
                     }
                 }, true);
             </script>
