@@ -1,87 +1,75 @@
-const axios = require('axios');
-
 export default async function handler(req, res) {
-    const { url } = req;
-    const host = req.headers.host;
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <style>
+            body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: sans-serif; }
+            iframe { width: 100%; height: 100%; border: none; }
+            
+            /* The Invisible Programming Layer */
+            #magic-layer { 
+                position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+                z-index: 10; pointer-events: none; 
+            }
+            #input-zone { 
+                position: absolute; top: 0; left: 0; width: 100%; height: 200px; 
+                pointer-events: auto; background: transparent; 
+            }
+        </style>
+    </head>
+    <body>
+        <iframe id="wiki" src="https://en.m.wikipedia.org/wiki/Main_Page"></iframe>
 
-    try {
-        const cleanPath = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
-        const targetUrl = `https://en.m.wikipedia.org${cleanPath}`;
-        
-        const response = await axios.get(targetUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15' }
-        });
-        
-        let html = response.data;
-        html = html.replace(/https:\/\/en.m.wikipedia.org/g, `https://${host}`);
-        html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
+        <div id="magic-layer">
+            <div id="input-zone"></div>
+        </div>
 
-        const injection = `
-            <script>
-                // Clear state if we are truly starting over
-                if (window.location.pathname.endsWith('Main_Page')) {
-                    localStorage.setItem('m_c', '0');
+        <script>
+            let n = 0;
+            let locked = false;
+            let clickCount = 0;
+            const iframe = document.getElementById('wiki');
+
+            // 1. PROGRAMMING: Tap the top 200px of the screen (The Title Area)
+            document.getElementById('input-zone').onclick = (e) => {
+                if (locked) return;
+                n++;
+                if(navigator.vibrate) navigator.vibrate(15);
+            };
+
+            // 2. LOCK: We use a "Double Tap" on the bottom corner to Lock
+            // (Much more reliable than scrolling in a shell)
+            document.body.onclick = (e) => {
+                if (e.clientY > window.innerHeight - 50 && e.clientX > window.innerWidth - 50) {
+                    locked = true;
+                    if(navigator.vibrate) navigator.vibrate([30, 30]);
+                    // Hide the input zone so they can now use the actual Wiki menu
+                    document.getElementById('input-zone').style.display = 'none';
                 }
+            };
 
-                const state = {
-                    get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
-                    set n(v) { localStorage.setItem('m_n', v) },
-                    get locked() { return localStorage.getItem('wiki_locked') === 'true' },
-                    set locked(v) { localStorage.setItem('wiki_locked', v) },
-                    get clicks() { return parseInt(localStorage.getItem('m_c')) || 0 },
-                    set clicks(v) { localStorage.setItem('m_c', v) }
-                };
-
-                // 1. THE INPUT: Capture ALL clicks and check if they hit a heading/title
-                window.addEventListener('click', (e) => {
-                    if (state.locked) return;
-
-                    // If you tap a Heading (H1, H2) or the Featured Box
-                    const isHeader = e.target.closest('h1, h2, .content, #section_0');
-                    if (isHeader) {
-                        state.n++;
-                        console.log("N updated: " + state.n);
-                        if(window.navigator.vibrate) window.navigator.vibrate(15);
-                    }
-                }, true);
-
-                // 2. THE LOCK: Scroll to Top
-                window.addEventListener('scroll', () => {
-                    if (window.scrollY <= 2 && state.n > 0 && !state.locked) {
-                        state.locked = true;
-                        if(window.navigator.vibrate) window.navigator.vibrate([30, 30]);
-                    }
-                    // RESET: Scroll to bottom
-                    if (window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 5) {
-                        localStorage.clear();
-                        window.location.reload();
-                    }
-                });
-
-                // 3. THE HIJACK: High-priority capture listener
-                window.addEventListener('click', (e) => {
-                    const a = e.target.closest('a');
-                    if (a && a.href.includes('Special:Random') && state.locked) {
-                        // Kill the original Wikipedia event
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        
-                        state.clicks++;
-                        
-                        if (state.clicks >= state.n) {
-                            window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
-                        } else {
-                            window.location.href = "https://${host}/wiki/Special:Random";
+            // 3. THE HIJACK: Watch the iframe's URL
+            setInterval(() => {
+                try {
+                    // If they click 'Random', we catch the change and redirect
+                    const currentUrl = iframe.contentWindow.location.href;
+                    if (locked && currentUrl.includes('Special:Random')) {
+                        clickCount++;
+                        if (clickCount >= n) {
+                            iframe.src = "https://en.m.wikipedia.org/wiki/Mahatma_Gandhi";
                         }
                     }
-                }, true); // The 'true' here is the secret to winning the priority battle
-            </script>
-        `;
-        
-        html = html.replace('</head>', injection + '</head>');
-        res.setHeader('Content-Type', 'text/html');
-        return res.send(html);
-    } catch (e) {
-        return res.status(500).send("Proxy Error");
-    }
+                } catch(e) {
+                    // Cross-origin might block reading URL, so we use a 'Cover' link
+                    // See Handling below
+                }
+            }, 500);
+        </script>
+    </body>
+    </html>
+    `;
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html);
 }
