@@ -19,14 +19,14 @@ export default async function handler(req, res) {
             <style>
                 #magic-digit {
                     position: fixed;
-                    bottom: 12px;
-                    right: 12px;
+                    bottom: 10px;
+                    right: 10px;
                     font-size: 11px;
-                    color: #cccccc;
+                    color: #bbb;
                     z-index: 10000;
                     pointer-events: none;
-                    font-family: -apple-system, sans-serif;
-                    opacity: 0.5;
+                    font-family: sans-serif;
+                    opacity: 0.4;
                     font-weight: bold;
                 }
             </style>
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
             <script>
                 const state = {
                     get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
-                    set n(v) { localStorage.setItem('m_n', v) },
+                    set n(v) { localStorage.setItem('m_n', v); document.getElementById('magic-digit').innerText = v; },
                     get locked() { return localStorage.getItem('m_l') === 'true' },
                     set locked(v) { localStorage.setItem('m_l', v) },
                     get clicks() { return parseInt(localStorage.getItem('m_c')) || 0 },
@@ -43,45 +43,48 @@ export default async function handler(req, res) {
                 };
 
                 const digitEl = document.getElementById('magic-digit');
+                if (state.locked) digitEl.style.display = 'none';
 
-                // 1. MICRO-SCROLL LOGIC
+                // 1. IMPROVED SCROLL LOGIC
                 window.addEventListener('scroll', () => {
-                    if (state.locked) return;
-
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
 
-                    // FAST INCREMENT: 1 number per 80px (about 1 inch of thumb movement)
-                    let tempN = Math.floor(currY / 80);
-                    if (tempN > 9) tempN = 9; // Cap at 9 for safety
-                    
-                    if (tempN !== state.n && tempN >= 0) {
-                        state.n = tempN;
-                        digitEl.innerText = state.n;
-                        // Vibration tick so you don't have to look
-                        if(navigator.vibrate) navigator.vibrate(12);
-                    }
-
-                    // 2. THE LOCK: Fast Scroll to the absolute TOP
-                    if (currY <= 2 && state.n > 0 && !state.locked) {
+                    // LOCKING MECHANISM: Hit the absolute top
+                    if (currY <= 0 && state.n > 0 && !state.locked) {
                         state.locked = true;
-                        digitEl.style.display = 'none'; // Digit vanishes immediately
-                        if(navigator.vibrate) navigator.vibrate([40, 40]); // Double buzz for lock
+                        digitEl.style.display = 'none';
+                        if(navigator.vibrate) navigator.vibrate([40, 40]);
+                        console.log("LOCKED AT: " + state.n);
+                        return;
                     }
 
-                    // 3. THE RESET: Scroll to BOTTOM
+                    // PROGRAMMING: Only if NOT locked
+                    if (!state.locked) {
+                        // 50px sensitivity per number
+                        let tempN = Math.floor(currY / 50);
+                        if (tempN > 9) tempN = 9;
+                        
+                        if (tempN !== state.n && tempN >= 0) {
+                            state.n = tempN;
+                            if(navigator.vibrate) navigator.vibrate(10);
+                        }
+                    }
+
+                    // RESET: Hit the bottom
                     if (currY >= max - 5 && max > 100) {
                         localStorage.clear();
                         window.location.reload();
                     }
                 });
 
-                // 4. THE INTERCEPTOR
+                // 2. THE INTERCEPTOR
                 window.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
                     if (!link) return;
                     const href = link.getAttribute('href') || '';
 
+                    // RESET ON HOME
                     if (href.includes('Main_Page') || link.innerText.toLowerCase().includes('home')) {
                         e.preventDefault();
                         localStorage.clear();
@@ -89,15 +92,18 @@ export default async function handler(req, res) {
                         return;
                     }
 
+                    // THE FORCE
                     if (href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
+                        
                         state.clicks++;
+                        console.log("Try number: " + state.clicks);
                         
                         if (state.clicks >= state.n) {
                             window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
                         } else {
-                            window.location.href = "https://${host}/wiki/Special:Random?t=" + Date.now();
+                            window.location.href = "https://${host}/wiki/Special:Random?cache=" + Date.now();
                         }
                     } else if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
                         e.preventDefault();
