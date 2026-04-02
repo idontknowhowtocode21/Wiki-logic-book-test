@@ -19,14 +19,15 @@ export default async function handler(req, res) {
             <style>
                 #magic-digit {
                     position: fixed;
-                    bottom: 5px;
-                    right: 8px;
-                    font-size: 10px;
-                    color: #d1d1d1; /* Very faint gray */
+                    bottom: 12px;
+                    right: 12px;
+                    font-size: 11px;
+                    color: #cccccc;
                     z-index: 10000;
                     pointer-events: none;
-                    font-family: monospace;
-                    opacity: 0.6;
+                    font-family: -apple-system, sans-serif;
+                    opacity: 0.5;
+                    font-weight: bold;
                 }
             </style>
             <div id="magic-digit">0</div>
@@ -43,35 +44,35 @@ export default async function handler(req, res) {
 
                 const digitEl = document.getElementById('magic-digit');
 
-                // 1. THE SCROLL-O-METER
+                // 1. MICRO-SCROLL LOGIC
                 window.addEventListener('scroll', () => {
                     if (state.locked) return;
 
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
 
-                    // Calculate N based on scroll depth (1 per 300px)
-                    // We cap it at 9, but you can go higher
-                    let tempN = Math.floor(currY / 300);
-                    if (tempN > 9) tempN = 9;
+                    // FAST INCREMENT: 1 number per 80px (about 1 inch of thumb movement)
+                    let tempN = Math.floor(currY / 80);
+                    if (tempN > 9) tempN = 9; // Cap at 9 for safety
                     
-                    if (tempN !== state.n && tempN > 0) {
+                    if (tempN !== state.n && tempN >= 0) {
                         state.n = tempN;
                         digitEl.innerText = state.n;
-                        if(navigator.vibrate) navigator.vibrate(10);
+                        // Vibration tick so you don't have to look
+                        if(navigator.vibrate) navigator.vibrate(12);
                     }
 
-                    // 2. THE LOCK: Scroll back to the absolute TOP
+                    // 2. THE LOCK: Fast Scroll to the absolute TOP
                     if (currY <= 2 && state.n > 0 && !state.locked) {
                         state.locked = true;
-                        digitEl.style.display = 'none'; // Digit vanishes forever
-                        if(navigator.vibrate) navigator.vibrate([30, 30]);
+                        digitEl.style.display = 'none'; // Digit vanishes immediately
+                        if(navigator.vibrate) navigator.vibrate([40, 40]); // Double buzz for lock
                     }
 
-                    // 3. THE RESET: Scroll to absolute BOTTOM
+                    // 3. THE RESET: Scroll to BOTTOM
                     if (currY >= max - 5 && max > 100) {
                         localStorage.clear();
-                        location.reload();
+                        window.location.reload();
                     }
                 });
 
@@ -92,6 +93,7 @@ export default async function handler(req, res) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
                         state.clicks++;
+                        
                         if (state.clicks >= state.n) {
                             window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
                         } else {
@@ -113,4 +115,3 @@ export default async function handler(req, res) {
         return res.status(500).send("Proxy Error");
     }
 }
-
