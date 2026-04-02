@@ -2,7 +2,7 @@ const axios = require('axios');
 
 export default async function handler(req, res) {
     const { url } = req;
-    const host = req.headers.host;
+    const host = req.headers.host; // Dynamically gets your Vercel URL
 
     try {
         const cleanPath = (url === '/' || url === '/api') ? '/wiki/Main_Page' : url;
@@ -14,12 +14,11 @@ export default async function handler(req, res) {
         
         let html = response.data;
         
-        // 1. PIXEL PERFECT: Pull all CSS, Fonts, and Icons directly from Wikipedia
+        // 1. STYLES: Pull CSS/Fonts from Wiki, but keep the Logic on Vercel
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
             <script>
-                // We use localStorage so the count follows the spectator through random pages
                 const state = {
                     get n() { return parseInt(localStorage.getItem('m_n')) || 0 },
                     set n(v) { localStorage.setItem('m_n', v) },
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
                     set clicks(v) { localStorage.setItem('m_c', v) }
                 };
 
-                // 1. PROGRAMMING: Tap the Featured Article title
+                // 1. INPUT: Tap Title
                 document.addEventListener('click', (e) => {
                     if (state.locked) return;
                     if (e.target.closest('#section_0, .header-container')) {
@@ -38,7 +37,7 @@ export default async function handler(req, res) {
                     }
                 }, true);
 
-                // 2. LOCK: Scroll to top
+                // 2. LOCK: Scroll Top
                 window.addEventListener('scroll', () => {
                     if (window.scrollY <= 1 && state.n > 0 && !state.locked) {
                         state.locked = true;
@@ -46,26 +45,38 @@ export default async function handler(req, res) {
                     }
                 });
 
-                // 3. THE INTERCEPTOR: Capture EVERY click on the page
+                // 3. THE IRON CAGE: Intercept EVERY link click on the entire site
                 window.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
-                    
-                    // If they click 'Random' and we are locked...
-                    if (link && link.href.includes('Special:Random') && state.locked) {
-                        // STOP Wikipedia from taking over
+                    if (!link) return;
+
+                    const href = link.getAttribute('href');
+                    if (!href) return;
+
+                    // SPECIAL CASE: The Random Force
+                    if (href.includes('Special:Random') && state.locked) {
                         e.preventDefault();
                         e.stopImmediatePropagation();
-                        
                         state.clicks++;
-                        
-                        // Force redirect through YOUR Vercel proxy
                         if (state.clicks >= state.n) {
                             window.location.href = "https://${host}/wiki/Mahatma_Gandhi";
                         } else {
                             window.location.href = "https://${host}/wiki/Special:Random?t=" + Date.now();
                         }
+                        return;
                     }
-                }, true); // 'true' means we catch the click BEFORE Wikipedia's scripts do
+
+                    // GENERAL CASE: All other links (Home, Search, etc.)
+                    // If it's a Wikipedia link, rewrite it to stay on Vercel
+                    if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        
+                        // Extract the path (e.g., /wiki/Main_Page)
+                        const path = href.replace('https://en.m.wikipedia.org', '');
+                        window.location.href = "https://${host}" + path;
+                    }
+                }, true);
             </script>
         `;
         
