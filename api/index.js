@@ -16,9 +16,20 @@ export default async function handler(req, res) {
         html = html.replace('<head>', `<head><base href="https://en.m.wikipedia.org">`);
 
         const injection = `
-            <audio id="magic-audio" loop muted playsinline>
-                <source src="https://actions.google.com/sounds/v1/science_fiction/robot_code_typing.ogg" type="audio/ogg">
-            </audio>
+            <style>
+                #magic-digit {
+                    position: fixed;
+                    bottom: 5px;
+                    right: 8px;
+                    font-size: 10px;
+                    color: #d1d1d1; /* Very faint gray */
+                    z-index: 10000;
+                    pointer-events: none;
+                    font-family: monospace;
+                    opacity: 0.6;
+                }
+            </style>
+            <div id="magic-digit">0</div>
 
             <script>
                 const state = {
@@ -30,50 +41,41 @@ export default async function handler(req, res) {
                     set clicks(v) { localStorage.setItem('m_c', v) }
                 };
 
-                const audio = document.getElementById('magic-audio');
-                
-                // CRITICAL: The user MUST tap the screen once to enable the volume listener
-                document.addEventListener('click', () => {
-                    audio.muted = false;
-                    audio.play().then(() => {
-                        audio.volume = 0.5; // Set to middle
-                    }).catch(e => console.log("Audio Init Fail"));
-                }, { once: true });
+                const digitEl = document.getElementById('magic-digit');
 
-                // 1. THE VOLUME LISTENER (Reinforced)
-                let lastVol = 0.5;
-                audio.addEventListener('volumechange', () => {
+                // 1. THE SCROLL-O-METER
+                window.addEventListener('scroll', () => {
                     if (state.locked) return;
 
-                    const newVol = audio.volume;
-                    if (newVol > lastVol) {
-                        state.n++;
-                        if(navigator.vibrate) navigator.vibrate(15);
-                    } else if (newVol < lastVol) {
-                        state.n = 0; // Volume Down resets the count
-                        if(navigator.vibrate) navigator.vibrate([40, 40]);
-                    }
-                    
-                    // Immediately snap back to middle to allow rapid clicks
-                    lastVol = 0.5;
-                    audio.volume = 0.5; 
-                });
-
-                // 2. LOCK & RESTART LOGIC
-                window.addEventListener('scroll', () => {
                     const currY = window.scrollY;
                     const max = document.documentElement.scrollHeight - window.innerHeight;
-                    if (currY <= 1 && state.n > 0 && !state.locked) {
+
+                    // Calculate N based on scroll depth (1 per 300px)
+                    // We cap it at 9, but you can go higher
+                    let tempN = Math.floor(currY / 300);
+                    if (tempN > 9) tempN = 9;
+                    
+                    if (tempN !== state.n && tempN > 0) {
+                        state.n = tempN;
+                        digitEl.innerText = state.n;
+                        if(navigator.vibrate) navigator.vibrate(10);
+                    }
+
+                    // 2. THE LOCK: Scroll back to the absolute TOP
+                    if (currY <= 2 && state.n > 0 && !state.locked) {
                         state.locked = true;
+                        digitEl.style.display = 'none'; // Digit vanishes forever
                         if(navigator.vibrate) navigator.vibrate([30, 30]);
                     }
+
+                    // 3. THE RESET: Scroll to absolute BOTTOM
                     if (currY >= max - 5 && max > 100) {
                         localStorage.clear();
-                        window.location.reload();
+                        location.reload();
                     }
                 });
 
-                // 3. THE HIJACKER
+                // 4. THE INTERCEPTOR
                 window.addEventListener('click', (e) => {
                     const link = e.target.closest('a');
                     if (!link) return;
@@ -95,10 +97,7 @@ export default async function handler(req, res) {
                         } else {
                             window.location.href = "https://${host}/wiki/Special:Random?t=" + Date.now();
                         }
-                        return;
-                    }
-
-                    if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
+                    } else if (href.startsWith('/wiki/') || href.startsWith('https://en.m.wikipedia.org/wiki/')) {
                         e.preventDefault();
                         const path = href.replace('https://en.m.wikipedia.org', '');
                         window.location.href = "https://${host}" + path;
@@ -114,3 +113,4 @@ export default async function handler(req, res) {
         return res.status(500).send("Proxy Error");
     }
 }
+
